@@ -23,6 +23,10 @@ function App() {
     { value: "route", label: "Routing & Legs" },
     { value: "cluster", label: "Clustering" },
     { value: "geofence", label: "Geofence" },
+    { value: "polyline", label: "Polyline" },
+    { value: "mouseclick", label: "Position Click Event" },
+    { value: "circle", label: "Circle Polygon" },
+    { value: "rectangle", label: "Rectangle Polygon" },
   ];
 
   // 출발지 dropdown 옵션
@@ -43,12 +47,6 @@ function App() {
       latitude: item.latitude,
       longitude: item.longitude,
     })),
-  ];
-
-  // 클러스터 dropdown 옵션
-  const clusterOptions = [
-    { value: "cluster1", label: "Cluster 1" },
-    { value: "cluster2", label: "Cluster 2" },
   ];
 
   // 지오펜스 dropdown 옵션

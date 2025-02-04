@@ -3,16 +3,25 @@ import H from "@here/maps-api-for-javascript";
 import "./Map.css";
 import { clusterData } from "./data";
 
-const Map = ({ apikey, option, departureOption, destinationOption, region }) => {
+const Map = ({
+  apikey,
+  option,
+  departureOption,
+  destinationOption,
+  region,
+}) => {
   const mapRef = useRef(null);
   const map = useRef(null);
   const platform = useRef(null);
   const panelRef = useRef(null);
+  const clusteringLayerRef = useRef(null);
+  const geoJSONLayerRef = useRef(null);
+  const circleRef = useRef(null);
   const ui = useRef(null);
   const [waypoints, setWaypoints] = useState("");
   const [summary, setSummary] = useState({ duration: 0, distance: 0 });
   const [manuevers, setManuevers] = useState([]);
-
+  const [clickedPosition, setClickedPosition] = useState({ lat: 0, lng: 0 });
   useEffect(() => {
     // Check if the map object has already been created
     if (!map.current) {
@@ -33,8 +42,8 @@ const Map = ({ apikey, option, departureOption, destinationOption, region }) => 
         mapRef.current,
         defaultLayers.vector.normal.map,
         {
-          zoom: 2,
-          center: { lat: 30.789, lng: 33.79 },
+          zoom: 7,
+          center: { lat: 34.061966881560096, lng: -118.23685846823405 }, 
           pixelRatio: window.devicePixelRatio || 1,
         }
       );
@@ -46,6 +55,8 @@ const Map = ({ apikey, option, departureOption, destinationOption, region }) => 
 
       // Set the map object to the reference
       map.current = newMap;
+
+      setUpClickListener(map.current);
     }
   }, [apikey]);
 
@@ -53,9 +64,19 @@ const Map = ({ apikey, option, departureOption, destinationOption, region }) => 
   useEffect(() => {
     if (!map.current || !ui.current) return;
     const service = platform.current.getSearchService();
-
+    console.log("option", option);
     if (map.current) {
       map.current.removeObjects(map.current.getObjects());
+    }
+
+    if (clusteringLayerRef.current && option !== "cluster") {
+      map.current.removeLayer(clusteringLayerRef.current);
+      clusteringLayerRef.current = null;
+    }
+
+    if (geoJSONLayerRef.current) {
+      map.current.removeLayer(geoJSONLayerRef.current);
+      geoJSONLayerRef.current = null;
     }
 
     if (
@@ -76,11 +97,23 @@ const Map = ({ apikey, option, departureOption, destinationOption, region }) => 
       startClustering(map.current, clusterData, ui.current, service);
     } else if (option === "geofence") {
       showGeoJSONData(map.current, region);
+    } else if (option === "polyline") {
+      addPolylineToMap(map.current);
+    } else if (option === "circle") {
+      addCircleToMap(map.current);
+    } else if (option === "rectangle") {
+      addRectangleToMap(map.current);
     }
     // 추가 옵션에 따른 업데이트 로직을 여기에 작성합니다.
   }, [option, departureOption, destinationOption, region]);
 
-  function calucateRouteFromAtoB(platform, map, ui, departureOption, destinationOption) {
+  function calucateRouteFromAtoB(
+    platform,
+    map,
+    ui,
+    departureOption,
+    destinationOption
+  ) {
     let router = platform.getRoutingService(null, 8);
     let routeRequestParams = {
       routingMode: "fast",
@@ -118,7 +151,7 @@ const Map = ({ apikey, option, departureOption, destinationOption, region }) => 
       //Crate a polyline to displkay to the route;
       let polyline = new H.map.Polyline(linestring, {
         style: {
-          lineWidth: 10,
+          lineWidth: 8,
           strokeColor: "rgba(0, 128, 255, 0.7)",
         },
       });
@@ -176,6 +209,22 @@ const Map = ({ apikey, option, departureOption, destinationOption, region }) => 
     });
   }
 
+  /**
+   * Adds a polyline between Dublin, London, Paris and Berlin to the map
+   *
+   * @param  {H.Map} map      A HERE Map instance within the application
+   */
+  function addPolylineToMap(map) {
+    var lineString = new H.geo.LineString();
+
+    lineString.pushPoint({ lat: 34.14505917480674, lng: -119.19708637721835 });
+    lineString.pushPoint({ lat: 34.057353670886904, lng: -118.23390005954201 });
+    lineString.pushPoint({ lat: 33.4572923211956, lng: -111.94276226679473 });
+    lineString.pushPoint({ lat: 29.441632389913806, lng: -98.25854394118814 });
+
+    map.addObject(new H.map.Polyline(lineString, { style: { lineWidth: 4 } }));
+  }
+
   function openBubble(position, text, ui) {
     let bubble;
     if (!bubble) {
@@ -230,6 +279,7 @@ const Map = ({ apikey, option, departureOption, destinationOption, region }) => 
 
     setSummary({ duration: toMMSS(duration), distance: distance });
   }
+
   function addManueversToPanel(route) {
     const maneuversList = [];
     route.sections.forEach((section) => {
@@ -244,8 +294,55 @@ const Map = ({ apikey, option, departureOption, destinationOption, region }) => 
         );
       });
     });
-    console.log("maneuversList", maneuversList);
     setManuevers(maneuversList);
+  }
+
+  /**
+   * An event listener is added to listen to tap events on the map.
+   * Clicking on the map displays an alert box containing the latitude and longitude
+   * of the location pressed.
+   * @param  {H.Map} map      A HERE Map instance within the application
+   */
+  function setUpClickListener(map) {
+    // Attach an event listener to map display
+    // obtain the coordinates and display in an alert box.
+    map.addEventListener("tap", function (evt) {
+      const coord = map.screenToGeo(
+        evt.currentPointer.viewportX,
+        evt.currentPointer.viewportY
+      );
+
+      if (circleRef.current !== null) {
+        map.removeObject(circleRef.current);
+        circleRef.current = null;
+      }
+
+  
+        circleRef.current = new H.map.Circle(
+          { lat: coord.lat, lng: coord.lng }, // 클릭한 위치의 위경도 사용
+          10000, // 반경 (미터 단위)
+          {
+            style: {
+              strokeColor: "rgba(55, 85, 170, 0.6)", // 테두리 색상
+              lineWidth: 2,
+              fillColor: "rgba(0, 128, 0, 0.7)", // 내부 채우기 색상
+            },
+          }
+        );
+        // 새 circle을 지도에 추가
+        map.addObject(circleRef.current);
+        setClickedPosition({ lat: coord.lat, lng: coord.lng });
+      
+
+      alert(
+        "Clicked at " +
+          Math.abs(coord.lat.toFixed(4)) +
+          (coord.lat > 0 ? "N" : "S") +
+          " " +
+          Math.abs(coord.lng.toFixed(4)) +
+          (coord.lng > 0 ? "E" : "W")
+      );
+    });
   }
 
   function toMMSS(duration) {
@@ -284,9 +381,16 @@ const Map = ({ apikey, option, departureOption, destinationOption, region }) => 
       const lng = marker.getGeometry().lng;
 
       if (isCluster) {
-        // map.getViewModel().setLookAtData({
-        //     zoom: 7,
-        // })
+        point.forEachDataPoint((dataPoint) => {
+          console.log(
+            "Clicked location latitude",
+            dataPoint.getPosition().lat,
+            "longitude",
+            dataPoint.getPosition().lng,
+            "name",
+            dataPoint.getData()
+          );
+        });
       } else {
         service.geocode(
           {
@@ -306,9 +410,11 @@ const Map = ({ apikey, option, departureOption, destinationOption, region }) => 
     });
 
     // Create a layer that will hold the clustered data points
-    let clusteringLayer = new H.map.layer.ObjectLayer(clusteredDataProvider);
+    clusteringLayerRef.current = new H.map.layer.ObjectLayer(
+      clusteredDataProvider
+    );
     // Add the clustered layer to the map
-    map.addLayer(clusteringLayer);
+    map.addLayer(clusteringLayerRef.current);
   }
 
   /**
@@ -338,17 +444,56 @@ const Map = ({ apikey, option, departureOption, destinationOption, region }) => 
     // Start parsing the file
     reader.parse();
 
+    geoJSONLayerRef.current = reader.getLayer();
+
     // Add layer which shows GeoJSON data on the map
-    map.addLayer(reader.getLayer());
+    map.addLayer(geoJSONLayerRef.current);
   }
 
+  /**
+   * Adds a circle over New Delhi with a radius of 1000 metres onto the map
+   *
+   * @param  {H.Map} map      A HERE Map instance within the application
+   */
+  function addCircleToMap(map) {
+    circleRef.current = new H.map.Circle(
+      { lat: 34.05906026395163, lng: -118.36161612490494 },
+      10000,
+      {
+        style: {
+          strokeColor: "rgba(55, 85, 170, 0.6)",
+          lineWidth: 2,
+          
+        },
+      }
+    );
+    map.addObject(circleRef.current);
+  }
+
+  /**
+ * Adds a rectangle to the map
+ *
+ * @param  {H.Map} map      A HERE Map instance within the application
+ */
+function addRectangleToMap(map) {
+  var boundingBox = new H.geo.Rect(33.9, -118.09, 33.7, -117.81); 
+  map.addObject(
+    new H.map.Rect( boundingBox, {
+      style: {
+        strokeColor: "rgba(55, 85, 170, 0.6)",
+        fillColor: "rgba(0, 128, 0, 0.7)",
+        lineWidth: 8,
+      },
+    })
+  );
+}
   // Return a div element to hold the map
   return (
     <div className="mt-20">
       {/* <div ref={mapRef} style={{ width: "90%", height: "500px" }} /> */}
       <div ref={mapRef} className="w-9/12 h-150 m-auto" />
-        {option === "route" && (
-      <div ref={panelRef}>
+      {option === "route" && (
+        <div ref={panelRef}>
           <div>
             <h3 className="text-lg font-bold mx-5">{waypoints}</h3>
             <div
@@ -365,8 +510,22 @@ const Map = ({ apikey, option, departureOption, destinationOption, region }) => 
               {manuevers}
             </ol>
           </div>
-      </div>
-        )}
+        </div>
+      )}
+      {option === "mouseclick" && (
+        <div>
+          <div>
+          <h3 className="text-lg font-bold mx-5">클릭한 위치</h3>
+          <div
+              style={{ fontSize: "small", marginLeft: "5%", marginRight: "5%" }}
+            >
+              <b>lat:</b> {clickedPosition.lat}
+              <br />
+              <b>lng:</b> {clickedPosition.lng}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
